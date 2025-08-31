@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Rhinestone Template Creator</title>
+    <link
+      rel="stylesheet"
+      href="styles.css"
+    />
+    <!-- External libraries for PDF and CDR generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>✨ Rhinestone Template Creator</h1>
+        <p>Convert your images into beautiful rhinestone templates</p>
+      </header>
+
+      <main class="app-content">
+        <!-- Left Panel - Controls -->
+        <div class="control-panel">
+          <div class="upload-section">
+            <h3>📁 Upload Image</h3>
+            <div
+              class="drop-zone"
+              id="dropZone"
+            >
+              <div class="drop-zone-content">
+                <div class="upload-icon">📷</div>
+                <p>Drag & drop your image here</p>
+                <p>or</p>
+                <button
+                  class="upload-btn"
+                  id="uploadBtn"
+                >
+                  Choose File
+                </button>
+                <input
+                  type="file"
+                  id="fileInput"
+                  accept="image/*"
+                  style="display: none"
+                />
+              </div>
+            </div>
+            <div
+              class="file-info"
+              id="fileInfo"
+              style="display: none"
+            >
+              <p>Selected: <span id="fileName"></span></p>
+              <button
+                class="clear-btn"
+                id="clearBtn"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div class="parameters-section">
+            <h3>⚙️ Parameters</h3>
+
+            <div class="parameter-group">
+              <label for="stoneColors">Stone Colors:</label>
+              <div class="slider-container">
+                <input
+                  type="range"
+                  id="stoneColors"
+                  min="1"
+                  max="8"
+                  value="1"
+                  class="slider"
+                />
+                <span
+                  class="slider-value"
+                  id="stoneColorsValue"
+                  >1</span
+                >
+              </div>
+            </div>
+
+            <div class="parameter-group">
+              <label for="stoneSize">Stone Size (SS):</label>
+              <select
+                id="stoneSize"
+                class="select"
+              >
+                <option value="6">SS6 (2.4mm)</option>
+                <option
+                  value="10"
+                  selected
+                >
+                  SS10 (2.8mm)
+                </option>
+                <option value="16">SS16 (3.2mm)</option>
+                <option value="20">SS20 (3.6mm)</option>
+              </select>
+            </div>
+
+            <div class="parameter-group">
+              <label for="designWidth">Design Width (mm):</label>
+              <div class="slider-container">
+                <input
+                  type="range"
+                  id="designWidth"
+                  min="50"
+                  max="300"
+                  value="150"
+                  class="slider"
+                />
+                <span
+                  class="slider-value"
+                  id="designWidthValue"
+                  >150mm</span
+                >
+              </div>
+            </div>
+
+            <div class="parameter-group">
+              <label for="designHeight">Design Height (mm):</label>
+              <div class="slider-container">
+                <input
+                  type="range"
+                  id="designHeight"
+                  min="50"
+                  max="300"
+                  value="150"
+                  class="slider"
+                />
+                <span
+                  class="slider-value"
+                  id="designHeightValue"
+                  >150mm</span
+                >
+              </div>
+            </div>
+
+            <div class="parameter-group">
+              <label for="stoneSpacing">Stone Spacing (mm):</label>
+              <div class="slider-container">
+                <input
+                  type="range"
+                  id="stoneSpacing"
+                  min="0"
+                  max="5"
+                  value="0.5"
+                  step="0.1"
+                  class="slider"
+                />
+                <span
+                  class="slider-value"
+                  id="stoneSpacingValue"
+                  >0.5mm</span
+                >
+              </div>
+            </div>
+
+            <div class="parameter-group">
+              <label for="threshold">Threshold:</label>
+              <div class="slider-container">
+                <input
+                  type="range"
+                  id="threshold"
+                  min="0"
+                  max="255"
+                  value="128"
+                  class="slider"
+                />
+                <span
+                  class="slider-value"
+                  id="thresholdValue"
+                  >128</span
+                >
+              </div>
+            </div>
+
+            <div class="parameter-group">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  id="invertFill"
+                />
+                <span class="checkmark"></span>
+                Invert Fill
+              </label>
+            </div>
+
+            <div class="parameter-group">
+              <label for="pattern">Template Pattern:</label>
+              <select
+                id="pattern"
+                class="select"
+              >
+                <option
+                  value="grid"
+                  selected
+                >
+                  Grid
+                </option>
+                <option value="scatter">Scatter</option>
+                <option value="radial">Radial</option>
+                <option value="contour">Contour</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="actions-section">
+            <button
+              class="create-btn"
+              id="createBtn"
+              disabled
+            >
+              Create Template
+            </button>
+            <div class="download-options">
+              <button
+                class="download-btn"
+                id="downloadSvgBtn"
+                disabled
+              >
+                Download SVG
+              </button>
+              <button
+                class="download-btn"
+                id="downloadPdfBtn"
+                disabled
+              >
+                Download PDF
+              </button>
+              <button
+                class="download-btn"
+                id="downloadCdrBtn"
+                disabled
+              >
+                Download CDR
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel - Preview -->
+        <div class="preview-panel">
+          <h3>👁️ Live Preview</h3>
+          <div class="canvas-container">
+            <canvas
+              id="previewCanvas"
+              width="600"
+              height="600"
+            ></canvas>
+          </div>
+          <div
+            class="preview-info"
+            id="previewInfo"
+          >
+            <p>Upload an image to see the preview</p>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
