@@ -74,7 +74,7 @@ class RhinestoneTemplateCreator {
       });
     });
 
-    const selects = ['stoneSize', 'pattern'];
+    const selects = ['stoneSize', 'pattern', 'zoomLevel'];
     selects.forEach((id) => {
       const select = document.getElementById(id);
       select.addEventListener('change', () => {
@@ -88,6 +88,22 @@ class RhinestoneTemplateCreator {
       if (this.originalImage) {
         this.updatePreview();
       }
+    });
+
+    // Reset threshold button
+    document
+      .getElementById('resetThresholdBtn')
+      .addEventListener('click', () => {
+        document.getElementById('threshold').value = 128;
+        document.getElementById('thresholdValue').textContent = '128';
+        if (this.originalImage) {
+          this.updatePreview();
+        }
+      });
+
+    // Reset all button
+    document.getElementById('resetAllBtn').addEventListener('click', () => {
+      this.resetAll();
     });
 
     // Action buttons
@@ -119,6 +135,11 @@ class RhinestoneTemplateCreator {
       const valueDisplay = document.getElementById(id + 'Value');
       valueDisplay.textContent = slider.value + suffix;
     });
+
+    // Update color selection when stone colors change
+    if (sliders.hasOwnProperty('stoneColors')) {
+      this.updateColorSelection();
+    }
   }
 
   handleFileUpload(file) {
@@ -223,7 +244,55 @@ class RhinestoneTemplateCreator {
       data[i] = data[i + 1] = data[i + 2] = luminosity;
     }
 
+    // Auto-adjust threshold for high-contrast images
+    this.autoAdjustThreshold(data);
+
     this.processedImageData = imageData;
+  }
+
+  autoAdjustThreshold(data) {
+    // Calculate image statistics
+    let minLuminance = 255;
+    let maxLuminance = 0;
+    let totalLuminance = 0;
+    let pixelCount = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const luminance = data[i];
+      minLuminance = Math.min(minLuminance, luminance);
+      maxLuminance = Math.max(maxLuminance, luminance);
+      totalLuminance += luminance;
+      pixelCount++;
+    }
+
+    const avgLuminance = totalLuminance / pixelCount;
+    const contrast = maxLuminance - minLuminance;
+
+    // Only auto-adjust if user hasn't manually set a threshold or if it's a very problematic image
+    const currentThreshold = parseInt(
+      document.getElementById('threshold').value,
+    );
+    const isDefaultThreshold = currentThreshold === 128; // Default value
+
+    // Auto-adjust threshold for problematic images
+    if (isDefaultThreshold) {
+      if (contrast < 30) {
+        // Very low contrast image - use average luminance
+        const newThreshold = Math.round(avgLuminance);
+        document.getElementById('threshold').value = newThreshold;
+        document.getElementById('thresholdValue').textContent = newThreshold;
+      } else if (maxLuminance < 50) {
+        // Very dark image (like black images) - set threshold to show dark areas
+        const newThreshold = Math.round(maxLuminance * 0.8);
+        document.getElementById('threshold').value = newThreshold;
+        document.getElementById('thresholdValue').textContent = newThreshold;
+      } else if (minLuminance > 200) {
+        // Very bright image - set threshold to show bright areas
+        const newThreshold = Math.round(minLuminance * 0.2);
+        document.getElementById('threshold').value = newThreshold;
+        document.getElementById('thresholdValue').textContent = newThreshold;
+      }
+    }
   }
 
   renderTemplate() {
@@ -238,11 +307,21 @@ class RhinestoneTemplateCreator {
       document.getElementById('designHeight').value,
     );
 
-    const maxCanvasSize = 500;
-    const scale = Math.min(
-      maxCanvasSize / designWidth,
-      maxCanvasSize / designHeight,
-    );
+    // Improved scaling for larger designs with zoom control
+    const zoomLevel = document.getElementById('zoomLevel').value;
+    let scale;
+
+    if (zoomLevel === 'auto') {
+      const maxCanvasSize = 600;
+      const minScale = 0.1; // Minimum scale to ensure visibility
+      scale = Math.max(
+        Math.min(maxCanvasSize / designWidth, maxCanvasSize / designHeight),
+        minScale,
+      );
+    } else {
+      // Use manual zoom level
+      scale = parseInt(zoomLevel) / 100;
+    }
 
     this.canvas.width = designWidth * scale;
     this.canvas.height = designHeight * scale;
@@ -265,7 +344,11 @@ class RhinestoneTemplateCreator {
         break;
     }
 
-    this.updatePreviewInfo(`Template created with ${pattern} pattern`);
+    this.updatePreviewInfo(
+      `Template created with ${pattern} pattern (Scale: ${(scale * 100).toFixed(
+        1,
+      )}%)`,
+    );
     document.getElementById('downloadSvgBtn').disabled = false;
     document.getElementById('downloadPdfBtn').disabled = false;
     document.getElementById('downloadCdrBtn').disabled = false;
@@ -290,8 +373,13 @@ class RhinestoneTemplateCreator {
         const pixelIndex = (Math.floor(y) * width + Math.floor(x)) * 4;
         const luminosity = data[pixelIndex];
 
-        let shouldPlaceStone = luminosity > threshold;
-        if (invertFill) shouldPlaceStone = !shouldPlaceStone;
+        // Improved threshold logic for black images
+        let shouldPlaceStone;
+        if (invertFill) {
+          shouldPlaceStone = luminosity <= threshold;
+        } else {
+          shouldPlaceStone = luminosity > threshold;
+        }
 
         if (shouldPlaceStone) {
           const colorIndex = Math.floor((luminosity / 255) * stoneColors);
@@ -343,8 +431,13 @@ class RhinestoneTemplateCreator {
         const pixelIndex = (y * width + x) * 4;
         const luminosity = data[pixelIndex];
 
-        let shouldPlaceStone = luminosity > threshold;
-        if (invertFill) shouldPlaceStone = !shouldPlaceStone;
+        // Improved threshold logic for black images
+        let shouldPlaceStone;
+        if (invertFill) {
+          shouldPlaceStone = luminosity <= threshold;
+        } else {
+          shouldPlaceStone = luminosity > threshold;
+        }
 
         if (shouldPlaceStone) {
           const colorIndex = Math.floor((luminosity / 255) * stoneColors);
@@ -495,8 +588,13 @@ class RhinestoneTemplateCreator {
           const pixelIndex = (Math.floor(y) * width + Math.floor(x)) * 4;
           const luminosity = data[pixelIndex];
 
-          let shouldPlaceStone = luminosity > threshold;
-          if (invertFill) shouldPlaceStone = !shouldPlaceStone;
+          // Improved threshold logic for black images
+          let shouldPlaceStone;
+          if (invertFill) {
+            shouldPlaceStone = luminosity <= threshold;
+          } else {
+            shouldPlaceStone = luminosity > threshold;
+          }
 
           if (shouldPlaceStone) {
             const colorIndex = Math.floor((luminosity / 255) * stoneColors);
@@ -601,7 +699,9 @@ class RhinestoneTemplateCreator {
   }
 
   getStoneColor(index, totalColors) {
-    const colors = [
+    // Get custom colors if available, otherwise use default colors
+    const customColors = this.getCustomColors();
+    const colors = customColors.length > 0 ? customColors : [
       '#FF0000',
       '#00FF00',
       '#0000FF',
@@ -619,6 +719,75 @@ class RhinestoneTemplateCreator {
 
     const normalizedIndex = Math.floor((index / totalColors) * colors.length);
     return colors[normalizedIndex % colors.length];
+  }
+
+  getCustomColors() {
+    const colorInputs = document.querySelectorAll('#colorSelectionContainer input[type="color"]');
+    return Array.from(colorInputs).map(input => input.value);
+  }
+
+  updateColorSelection() {
+    const numColors = parseInt(document.getElementById('stoneColors').value);
+    const container = document.getElementById('colorSelectionContainer');
+    const selectionDiv = document.getElementById('stoneColorSelection');
+
+    // Show/hide color selection based on number of colors
+    if (numColors > 1) {
+      selectionDiv.style.display = 'block';
+      container.innerHTML = '';
+
+      // Default colors
+      const defaultColors = [
+        '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
+        '#FF00FF', '#00FFFF', '#FFA500', '#800080'
+      ];
+
+      for (let i = 0; i < numColors; i++) {
+        const colorItem = document.createElement('div');
+        colorItem.className = 'color-picker-item';
+        
+        const label = document.createElement('label');
+        label.textContent = `Color ${i + 1}`;
+        
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.value = defaultColors[i] || '#FF0000';
+        colorInput.addEventListener('change', () => {
+          if (this.originalImage) {
+            this.updatePreview();
+          }
+        });
+
+        colorItem.appendChild(label);
+        colorItem.appendChild(colorInput);
+        container.appendChild(colorItem);
+      }
+    } else {
+      selectionDiv.style.display = 'none';
+    }
+  }
+
+  resetAll() {
+    // Reset all parameters to default values
+    document.getElementById('stoneColors').value = 1;
+    document.getElementById('stoneSize').value = 10;
+    document.getElementById('designWidth').value = 150;
+    document.getElementById('designHeight').value = 150;
+    document.getElementById('stoneSpacing').value = 0.5;
+    document.getElementById('threshold').value = 128;
+    document.getElementById('invertFill').checked = false;
+    document.getElementById('pattern').value = 'grid';
+    document.getElementById('zoomLevel').value = 'auto';
+
+    // Update displays
+    this.updateSliderValues();
+    this.updateColorSelection();
+
+    // Clear image and reset UI
+    this.clearImage();
+
+    // Show success message
+    this.updatePreviewInfo('All settings have been reset to default values');
   }
 
   hexToRgb(hex) {
