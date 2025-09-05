@@ -68,7 +68,7 @@ class RhinestoneTemplateCreator {
       const slider = document.getElementById(id);
       slider.addEventListener('input', () => {
         this.updateSliderValues();
-        if (this.originalImage) {
+        if (this.originalImage && this.currentTemplate) {
           this.updatePreview();
         }
       });
@@ -78,14 +78,26 @@ class RhinestoneTemplateCreator {
     selects.forEach((id) => {
       const select = document.getElementById(id);
       select.addEventListener('change', () => {
-        if (this.originalImage) {
+        if (id === 'stoneSize') {
+          this.handleStoneSizeChange();
+        }
+        if (this.originalImage && this.currentTemplate) {
           this.updatePreview();
         }
       });
     });
 
+    // Custom stone size input
+    document.getElementById('customStoneSize').addEventListener('input', () => {
+      this.handleCustomStoneSizeChange();
+      // Update preview if template exists
+      if (this.originalImage && this.currentTemplate) {
+        this.updatePreview();
+      }
+    });
+
     document.getElementById('invertFill').addEventListener('change', () => {
-      if (this.originalImage) {
+      if (this.originalImage && this.currentTemplate) {
         this.updatePreview();
       }
     });
@@ -94,10 +106,54 @@ class RhinestoneTemplateCreator {
     document
       .getElementById('resetThresholdBtn')
       .addEventListener('click', () => {
+        if (!this.originalImage) {
+          alert('Please upload an image first to auto-adjust the threshold.');
+          return;
+        }
+
+        // Reset to default first
         document.getElementById('threshold').value = 128;
         document.getElementById('thresholdValue').textContent = '128';
+
+        // Process the image to get auto-adjusted threshold
         if (this.originalImage) {
-          this.updatePreview();
+          // Create a temporary canvas to analyze the image
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+
+          const designWidth = parseInt(
+            document.getElementById('designWidth').value,
+          );
+          const designHeight = parseInt(
+            document.getElementById('designHeight').value,
+          );
+
+          canvas.width = designWidth;
+          canvas.height = designHeight;
+
+          // Draw and scale the image
+          ctx.drawImage(this.originalImage, 0, 0, designWidth, designHeight);
+
+          // Get image data
+          const imageData = ctx.getImageData(0, 0, designWidth, designHeight);
+          const data = imageData.data;
+
+          // Convert to grayscale
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const luminosity = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            data[i] = data[i + 1] = data[i + 2] = luminosity;
+          }
+
+          // Force auto-adjustment
+          this.autoAdjustThreshold(data, true);
+
+          // Update preview if template exists
+          if (this.currentTemplate) {
+            this.updatePreview();
+          }
         }
       });
 
@@ -136,10 +192,8 @@ class RhinestoneTemplateCreator {
       valueDisplay.textContent = slider.value + suffix;
     });
 
-    // Update color selection when stone colors change
-    if (sliders.hasOwnProperty('stoneColors')) {
-      this.updateColorSelection();
-    }
+    // Always update color selection when stone colors change
+    this.updateColorSelection();
   }
 
   handleFileUpload(file) {
@@ -155,7 +209,10 @@ class RhinestoneTemplateCreator {
         this.originalImage = img;
         this.displayFileInfo(file.name);
         this.enableCreateButton();
-        this.updatePreview();
+        // Don't automatically create template on upload
+        this.updatePreviewInfo(
+          'Image uploaded successfully. Click "Create Template" to generate the template.',
+        );
       };
       img.src = e.target.result;
     };
@@ -250,7 +307,7 @@ class RhinestoneTemplateCreator {
     this.processedImageData = imageData;
   }
 
-  autoAdjustThreshold(data) {
+  autoAdjustThreshold(data, forceAdjust = false) {
     // Calculate image statistics
     let minLuminance = 255;
     let maxLuminance = 0;
@@ -268,27 +325,32 @@ class RhinestoneTemplateCreator {
     const avgLuminance = totalLuminance / pixelCount;
     const contrast = maxLuminance - minLuminance;
 
-    // Only auto-adjust if user hasn't manually set a threshold or if it's a very problematic image
+    // Only auto-adjust if user hasn't manually set a threshold or if forced
     const currentThreshold = parseInt(
       document.getElementById('threshold').value,
     );
     const isDefaultThreshold = currentThreshold === 128; // Default value
 
-    // Auto-adjust threshold for problematic images
-    if (isDefaultThreshold) {
+    // Auto-adjust threshold for problematic images or when forced
+    if (isDefaultThreshold || forceAdjust) {
+      let newThreshold = 128; // Default fallback
+
       if (contrast < 30) {
         // Very low contrast image - use average luminance
-        const newThreshold = Math.round(avgLuminance);
-        document.getElementById('threshold').value = newThreshold;
-        document.getElementById('thresholdValue').textContent = newThreshold;
+        newThreshold = Math.round(avgLuminance);
       } else if (maxLuminance < 50) {
         // Very dark image (like black images) - set threshold to show dark areas
-        const newThreshold = Math.round(maxLuminance * 0.8);
-        document.getElementById('threshold').value = newThreshold;
-        document.getElementById('thresholdValue').textContent = newThreshold;
+        newThreshold = Math.round(maxLuminance * 0.8);
       } else if (minLuminance > 200) {
         // Very bright image - set threshold to show bright areas
-        const newThreshold = Math.round(minLuminance * 0.2);
+        newThreshold = Math.round(minLuminance * 0.2);
+      } else if (forceAdjust) {
+        // For normal images when forced, use average luminance
+        newThreshold = Math.round(avgLuminance);
+      }
+
+      // Update the threshold if it changed
+      if (newThreshold !== currentThreshold) {
         document.getElementById('threshold').value = newThreshold;
         document.getElementById('thresholdValue').textContent = newThreshold;
       }
@@ -342,6 +404,9 @@ class RhinestoneTemplateCreator {
       case 'contour':
         this.renderContourPattern();
         break;
+      case 'hatch':
+        this.renderHatchPattern();
+        break;
     }
 
     this.updatePreviewInfo(
@@ -355,7 +420,7 @@ class RhinestoneTemplateCreator {
   }
 
   renderGridPattern() {
-    const stoneSize = parseInt(document.getElementById('stoneSize').value);
+    const stoneSize = this.getCurrentStoneSize();
     const spacing = parseFloat(document.getElementById('stoneSpacing').value);
     const threshold = parseInt(document.getElementById('threshold').value);
     const invertFill = document.getElementById('invertFill').checked;
@@ -408,7 +473,7 @@ class RhinestoneTemplateCreator {
   }
 
   renderScatterPattern() {
-    const stoneSize = parseInt(document.getElementById('stoneSize').value);
+    const stoneSize = this.getCurrentStoneSize();
     const spacing = parseFloat(document.getElementById('stoneSpacing').value);
     const threshold = parseInt(document.getElementById('threshold').value);
     const invertFill = document.getElementById('invertFill').checked;
@@ -559,7 +624,7 @@ class RhinestoneTemplateCreator {
   }
 
   renderRadialPattern() {
-    const stoneSize = parseInt(document.getElementById('stoneSize').value);
+    const stoneSize = this.getCurrentStoneSize();
     const spacing = parseFloat(document.getElementById('stoneSpacing').value);
     const threshold = parseInt(document.getElementById('threshold').value);
     const invertFill = document.getElementById('invertFill').checked;
@@ -618,7 +683,7 @@ class RhinestoneTemplateCreator {
   }
 
   renderContourPattern() {
-    const stoneSize = parseInt(document.getElementById('stoneSize').value);
+    const stoneSize = this.getCurrentStoneSize();
     const spacing = parseFloat(document.getElementById('stoneSpacing').value);
     const threshold = parseInt(document.getElementById('threshold').value);
     const invertFill = document.getElementById('invertFill').checked;
@@ -698,19 +763,143 @@ class RhinestoneTemplateCreator {
     return edges;
   }
 
+  renderHatchPattern() {
+    const stoneSize = this.getCurrentStoneSize();
+    const spacing = parseFloat(document.getElementById('stoneSpacing').value);
+    const threshold = parseInt(document.getElementById('threshold').value);
+    const invertFill = document.getElementById('invertFill').checked;
+    const stoneColors = parseInt(document.getElementById('stoneColors').value);
+
+    const totalSpacing = stoneSize + spacing;
+    const width = this.processedImageData.width;
+    const height = this.processedImageData.height;
+    const data = this.processedImageData.data;
+
+    // First, identify all valid pixels that meet threshold criteria
+    const validPixels = new Set();
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const pixelIndex = (y * width + x) * 4;
+        const luminosity = data[pixelIndex];
+
+        let shouldPlaceStone;
+        if (invertFill) {
+          shouldPlaceStone = luminosity <= threshold;
+        } else {
+          shouldPlaceStone = luminosity > threshold;
+        }
+
+        if (shouldPlaceStone) {
+          validPixels.add(`${x},${y}`);
+        }
+      }
+    }
+
+    this.currentTemplate = [];
+
+    // Generate diagonal lines from top-left to bottom-right
+    // Calculate the number of diagonal lines needed based on spacing
+    const diagonalSpacing = totalSpacing * Math.sqrt(2); // Diagonal distance
+    const maxDiagonal = width + height;
+
+    // Start from different points along the top and left edges
+    for (
+      let startOffset = 0;
+      startOffset < maxDiagonal;
+      startOffset += diagonalSpacing
+    ) {
+      // Generate diagonal line from top edge
+      if (startOffset < width) {
+        this.drawDiagonalLine(
+          startOffset,
+          0,
+          width,
+          height,
+          validPixels,
+          stoneSize,
+          stoneColors,
+          data,
+        );
+      }
+
+      // Generate diagonal line from left edge (skip (0,0) to avoid duplication)
+      if (startOffset > 0 && startOffset < height) {
+        this.drawDiagonalLine(
+          0,
+          startOffset,
+          width,
+          height,
+          validPixels,
+          stoneSize,
+          stoneColors,
+          data,
+        );
+      }
+    }
+  }
+
+  drawDiagonalLine(
+    startX,
+    startY,
+    width,
+    height,
+    validPixels,
+    stoneSize,
+    stoneColors,
+    data,
+  ) {
+    const totalSpacing =
+      stoneSize + parseFloat(document.getElementById('stoneSpacing').value);
+    let x = startX;
+    let y = startY;
+
+    // Draw diagonal line from top-left to bottom-right
+    while (x < width && y < height) {
+      const pixelKey = `${Math.floor(x)},${Math.floor(y)}`;
+
+      // Check if this pixel is in a valid area
+      if (validPixels.has(pixelKey)) {
+        const pixelIndex = (Math.floor(y) * width + Math.floor(x)) * 4;
+        const luminosity = data[pixelIndex];
+        const colorIndex = Math.floor((luminosity / 255) * stoneColors);
+        const color = this.getStoneColor(colorIndex, stoneColors);
+
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, stoneSize / 2, 0, 2 * Math.PI);
+        this.ctx.fill();
+
+        this.currentTemplate.push({
+          x: x,
+          y: y,
+          radius: stoneSize / 2,
+          color: color,
+        });
+      }
+
+      // Move diagonally
+      x += totalSpacing;
+      y += totalSpacing;
+    }
+  }
+
   getStoneColor(index, totalColors) {
     // Get custom colors if available, otherwise use default colors
     const customColors = this.getCustomColors();
-    const colors = customColors.length > 0 ? customColors : [
-      '#FF0000',
-      '#00FF00',
-      '#0000FF',
-      '#FFFF00',
-      '#FF00FF',
-      '#00FFFF',
-      '#FFA500',
-      '#800080',
-    ];
+    const colors =
+      customColors.length > 0
+        ? customColors
+        : [
+            '#000000', // Black as default first color
+            '#FF0000',
+            '#00FF00',
+            '#0000FF',
+            '#FFFF00',
+            '#FF00FF',
+            '#00FFFF',
+            '#FFA500',
+            '#800080',
+          ];
 
     // If only 1 color is selected, always return the first color
     if (totalColors === 1) {
@@ -722,8 +911,10 @@ class RhinestoneTemplateCreator {
   }
 
   getCustomColors() {
-    const colorInputs = document.querySelectorAll('#colorSelectionContainer input[type="color"]');
-    return Array.from(colorInputs).map(input => input.value);
+    const colorInputs = document.querySelectorAll(
+      '#colorSelectionContainer input[type="color"]',
+    );
+    return Array.from(colorInputs).map((input) => input.value);
   }
 
   updateColorSelection() {
@@ -731,46 +922,99 @@ class RhinestoneTemplateCreator {
     const container = document.getElementById('colorSelectionContainer');
     const selectionDiv = document.getElementById('stoneColorSelection');
 
-    // Show/hide color selection based on number of colors
-    if (numColors > 1) {
-      selectionDiv.style.display = 'block';
-      container.innerHTML = '';
+    // Always show color selection (even for single color)
+    selectionDiv.style.display = 'block';
+    container.innerHTML = '';
 
-      // Default colors
-      const defaultColors = [
-        '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
-        '#FF00FF', '#00FFFF', '#FFA500', '#800080'
-      ];
+    // Default colors with black as first
+    const defaultColors = [
+      '#000000',
+      '#FF0000',
+      '#00FF00',
+      '#0000FF',
+      '#FFFF00',
+      '#FF00FF',
+      '#00FFFF',
+      '#FFA500',
+      '#800080',
+    ];
 
-      for (let i = 0; i < numColors; i++) {
-        const colorItem = document.createElement('div');
-        colorItem.className = 'color-picker-item';
-        
-        const label = document.createElement('label');
-        label.textContent = `Color ${i + 1}`;
-        
-        const colorInput = document.createElement('input');
-        colorInput.type = 'color';
-        colorInput.value = defaultColors[i] || '#FF0000';
-        colorInput.addEventListener('change', () => {
-          if (this.originalImage) {
-            this.updatePreview();
-          }
-        });
+    for (let i = 0; i < numColors; i++) {
+      const colorItem = document.createElement('div');
+      colorItem.className = 'color-picker-item';
 
-        colorItem.appendChild(label);
-        colorItem.appendChild(colorInput);
-        container.appendChild(colorItem);
-      }
-    } else {
-      selectionDiv.style.display = 'none';
+      const label = document.createElement('label');
+      label.textContent = `Color ${i + 1}`;
+
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.value = defaultColors[i] || '#FF0000';
+      colorInput.addEventListener('change', () => {
+        if (this.originalImage && this.currentTemplate) {
+          this.updatePreview();
+        }
+      });
+
+      colorItem.appendChild(label);
+      colorItem.appendChild(colorInput);
+      container.appendChild(colorItem);
     }
+  }
+
+  handleStoneSizeChange() {
+    const stoneSizeSelect = document.getElementById('stoneSize');
+    const customSizeInput = document.getElementById('customStoneSize');
+
+    // If a standard size is selected, update the custom input
+    if (stoneSizeSelect.value) {
+      const sizeMap = {
+        6: 2.4,
+        10: 2.8,
+        16: 3.2,
+        20: 3.6,
+      };
+      customSizeInput.value = sizeMap[stoneSizeSelect.value] || 2.4;
+    }
+  }
+
+  handleCustomStoneSizeChange() {
+    const customSizeInput = document.getElementById('customStoneSize');
+    const stoneSizeSelect = document.getElementById('stoneSize');
+    const customSize = parseFloat(customSizeInput.value);
+
+    // Validate custom size
+    if (customSize < 0.1 || customSize > 10.0) {
+      customSizeInput.setCustomValidity('Size must be between 0.1 and 10.0 mm');
+      return;
+    } else {
+      customSizeInput.setCustomValidity('');
+    }
+
+    // Check if custom size matches any dropdown value and sync dropdown
+    const sizeMap = {
+      2.4: '6', // SS6
+      2.8: '10', // SS10
+      3.2: '16', // SS16
+      3.6: '20', // SS20
+    };
+
+    if (sizeMap[customSize]) {
+      stoneSizeSelect.value = sizeMap[customSize];
+    } else {
+      // Clear dropdown selection if custom size doesn't match standard sizes
+      stoneSizeSelect.value = '';
+    }
+  }
+
+  getCurrentStoneSize() {
+    const customSizeInput = document.getElementById('customStoneSize');
+    return parseFloat(customSizeInput.value) || 2.4;
   }
 
   resetAll() {
     // Reset all parameters to default values
     document.getElementById('stoneColors').value = 1;
-    document.getElementById('stoneSize').value = 10;
+    document.getElementById('stoneSize').value = ''; // Clear dropdown selection
     document.getElementById('designWidth').value = 150;
     document.getElementById('designHeight').value = 150;
     document.getElementById('stoneSpacing').value = 0.5;
@@ -778,6 +1022,7 @@ class RhinestoneTemplateCreator {
     document.getElementById('invertFill').checked = false;
     document.getElementById('pattern').value = 'grid';
     document.getElementById('zoomLevel').value = 'auto';
+    document.getElementById('customStoneSize').value = 2.4;
 
     // Update displays
     this.updateSliderValues();
@@ -802,7 +1047,10 @@ class RhinestoneTemplateCreator {
   }
 
   createTemplate() {
-    if (!this.originalImage) return;
+    if (!this.originalImage) {
+      alert('Please upload an image first before creating a template.');
+      return;
+    }
 
     this.updatePreviewInfo('Creating template...');
     this.updatePreview();
@@ -817,6 +1065,16 @@ class RhinestoneTemplateCreator {
       document.getElementById('designHeight').value,
     );
     const pattern = document.getElementById('pattern').value;
+    const currentStoneSize = this.getCurrentStoneSize();
+
+    // Ensure template is up to date with current stone size
+    if (this.currentTemplate.length > 0) {
+      const expectedRadius = currentStoneSize / 2;
+      const actualRadius = this.currentTemplate[0].radius;
+      if (Math.abs(actualRadius - expectedRadius) > 0.1) {
+        this.updatePreview();
+      }
+    }
 
     let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${designWidth}mm" height="${designHeight}mm" viewBox="0 0 ${designWidth} ${designHeight}" 
@@ -856,6 +1114,16 @@ class RhinestoneTemplateCreator {
       document.getElementById('designHeight').value,
     );
     const pattern = document.getElementById('pattern').value;
+    const currentStoneSize = this.getCurrentStoneSize();
+
+    // Ensure template is up to date with current stone size
+    if (this.currentTemplate.length > 0) {
+      const expectedRadius = currentStoneSize / 2;
+      const actualRadius = this.currentTemplate[0].radius;
+      if (Math.abs(actualRadius - expectedRadius) > 0.1) {
+        this.updatePreview();
+      }
+    }
 
     try {
       // Create PDF using jsPDF
@@ -911,6 +1179,20 @@ class RhinestoneTemplateCreator {
       document.getElementById('designHeight').value,
     );
     const pattern = document.getElementById('pattern').value;
+    const currentStoneSize = this.getCurrentStoneSize();
+
+    // Ensure template is up to date with current stone size
+    // If the first stone's radius doesn't match current stone size / 2, regenerate template
+    if (this.currentTemplate.length > 0) {
+      const expectedRadius = currentStoneSize / 2;
+      const actualRadius = this.currentTemplate[0].radius;
+      if (Math.abs(actualRadius - expectedRadius) > 0.1) {
+        console.log(
+          'Template stone size mismatch detected. Regenerating template...',
+        );
+        this.updatePreview();
+      }
+    }
 
     try {
       // Create CDR-compatible SVG with specific attributes for CorelDRAW
